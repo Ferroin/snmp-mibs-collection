@@ -2,7 +2,7 @@
 This is a collection of MIB's for use with SNMP management tools.
 It's by no means an exhaustive collection, but it does cover most of
 the more common systems.  This constitutes what I personally consider
-a bsic set given typical network infrastructure.  It includes all the
+a basic set given typical network infrastructure.  It includes all the
 current IETF and IANA MIB's, as well as an assortment of vendor MIB's
 that cover most common systems.
 
