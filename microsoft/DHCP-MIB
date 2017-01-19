@@ -94,7 +94,7 @@ dhcpScope    	OBJECT IDENTIFIER ::= { dhcp 2 }
 		 declines"
       ::= { dhcpPar 8 }
 
- group (Prefix Scope)
+-- group (Prefix Scope)
 
 
   scopeTable OBJECT-TYPE
