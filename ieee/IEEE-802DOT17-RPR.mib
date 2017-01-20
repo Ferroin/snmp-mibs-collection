@@ -1,13 +1,13 @@
 IEEE-802DOT17-RPR-MIB DEFINITIONS ::= BEGIN
-
 IMPORTS
 
    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32,
    Counter64, Unsigned32
        FROM SNMPv2-SMI
    MODULE-COMPLIANCE, OBJECT-GROUP 
-       FROM SNMPv2-CONF
-   MacAddress, TimeStamp,TEXTUAL-CONVENTION, TruthValue, DateAndTime
+       FROM SNMPv2-CONF      
+   MacAddress, TimeStamp,TEXTUAL-CONVENTION, TruthValue, DateAndTime,
+   RowStatus
        FROM SNMPv2-TC
    InterfaceIndex, InterfaceIndexOrZero
        FROM IF-MIB
@@ -17,24 +17,65 @@ IMPORTS
        FROM INET-ADDRESS-MIB
    HCPerfTotalCount, HCPerfIntervalCount, HCPerfCurrentCount
        FROM HC-PerfHist-TC-MIB
-   ;
+   VlanIdOrNone
+       FROM Q-BRIDGE-MIB 
+    ;
+
 
     ieee802dot17rprMIB MODULE-IDENTITY
-    LAST-UPDATED "200404211200Z"  -- 21 Apr 2004 12:00:00 UTC
+    LAST-UPDATED "200903171200Z"  -- 17 March 2009 12:00:00 UTC
     ORGANIZATION "IEEE 802.17 Working Group"
     CONTACT-INFO "stds-802-17@ieee.org"
     DESCRIPTION
         "The resilient packet ring MIB for IEEE 802.17.
 
-         Copyright (C) IEEE802.17.
-         This version of this MIB module is part of IEEE802.17;
-         see the draft itself for full legal notices."
+         Copyright (C) IEEE (2006).  
+         This version of this MIB module
+         is published as Annex D.6 of IEEE Std 802.17c-2009;
+         see the standard itself for full legal notices."
 
     -- Revision history
+    REVISION
+        "200903171200Z"  -- 17 March 2009 12:00:00 UTC
+    DESCRIPTION
+        "Third published version.
+         Includes 802.17c Protected Inter-ring Connected (PIRC).
+         
+         This adds: 
+           TEXTUAL-CONVENTIONs - RprPircProtectionStatus.
+           Tables - rprPircConfTable, rprPircSummaryTable.
+           Module Compliances - rprModulePircCompliance 
+           BITS values - rprIfMacOperModes (pircEnabled, pircPrimary,
+                         pircRevertive, pircLoadbalancing),
+                         rprTopoImageStatus (receivedPircUser).
+           Objects - rprSpanStatsInOamPircStatusFrames,
+                     rprSpanStatsOutOamPircStatusFrames."
+
+
+    REVISION
+        "200611141200Z"  -- 14 November 2006 12:00:00  UTC
+    DESCRIPTION
+        "Second published version.
+         Includes 802.17b Spatially Aware Sublayer(SAS).
+         
+         This adds: 
+           TEXTUAL-CONVENTIONs - RprSasDbIdValue
+           Tables - rprSasSummaryTable, rprSasDbTable, 
+                    rprSasStaticUcastTable, rprSasStaticMcastTable, 
+                    rprSasCountersStatsTable.
+           Module Compliances - rprModuleSasCompliance
+           BITS values - rprIfMacOperModes (sasEnabled, relaxedTransmission,
+                         permissiveTransmission and sasVlanAware), 
+                         rprTopoImageStatus (receivedSasUser)
+           Objects - rprSpanStatsInOamSasNotifyFrames, 
+                     rprSpanStatsOutOamSasNotifyFrames."
+
+
     REVISION
         "200404211200Z"  -- 21 Apr 2004 12:00:00 UTC
     DESCRIPTION
         "First published version."
+
     ::= {iso std(0) iso8802(8802) ieee802dot17(17) ieee802dot17mibs(1) 1}
 
 --
@@ -44,9 +85,9 @@ IMPORTS
 RprSpan ::= TEXTUAL-CONVENTION
     STATUS current
     DESCRIPTION
-       "Indicates the span interface of the RPR MAC. Each RPR
+       "Indicates the span interface of the RPR MAC. Each RPR 
         span is connected to both ringlet0 and ringlet1.
-        The east span receives from ringlet1 and transmits through
+        The east span receives from ringlet1 and transmits through 
         ringlet0.
         The west span receives from ringlet0 and transmits through
         ringlet1."
@@ -62,7 +103,7 @@ RprProtectionStatus ::= TEXTUAL-CONVENTION
          span.
          The status values are (arranged in ascending priority 
          order) :
-
+    
          noRequest
          No protection request on the span, the protection
          status is idle.
@@ -112,23 +153,96 @@ RprOamRinglet ::= TEXTUAL-CONVENTION
         reverseRinglet (4)
         }
 
+RprRingHopCount ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d"
+    STATUS current
+    DESCRIPTION
+       "A hop count value."
+    SYNTAX Integer32 (0..255) 
+
+
+RprSasDbIdValue ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d"
+    STATUS current
+    DESCRIPTION
+       "An SDB ID.
+        This follows the syntax defined in Q-BRIDGE-MIB dot1qFdbId.
+        If this MAC interface has a bridging client, this is the 
+        dot1qFdbId value used in the corresponding bridge relay 
+        FDB entry.
+        If the MAC interface does not have a bridging client, then 
+        the value used is 1."
+    SYNTAX Unsigned32 (1..4094)
+
+RprPircProtectionStatus ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "Indicates the current PIRC protection status of the RPR MAC.
+         The status values are (arranged in ascending priority 
+         order) :
+    
+         noRequest
+         No PIRC protection request on the MAC, the PIRC protection
+         status is idle.
+
+         containment
+         The PIRC state preceding protection group member activation
+         for inter-ring connectivity. The PIRC containment timer
+         prevents frame duplication during PIRC transient events.
+
+         waitToRestore
+         The condition for an automatic PIRC protection was cleared
+         and the MAC is engaged in a wait to restore period.
+
+         manualSwitch
+         A user initiated PIRC manual switch (via the 
+         rprPircConfProtectionCommand) on the MAC.
+
+         protecting
+         The MAC PIRC protection state while the PIRC mate station
+         deactivates inter-ring connectivity.
+
+         failure
+         The MAC PIRC state during PIRC misconfiguration condition,
+         or loss of ring interface (i/f operStatus not up).
+
+         forcedSwitch
+         A user initiated PIRC forced switch (via the 
+         rprPircConfProtectionCommand) on the MAC."
+    SYNTAX BITS {
+        noRequest       (0),
+        containment     (1),
+        waitToRestore   (2),
+        manualSwitch    (3),
+        protecting      (4),
+        failure         (5),
+        forcedSwitch    (6)
+        }
+
 --
 -- Object groups
 --
 
 rprObjects            OBJECT IDENTIFIER ::= { ieee802dot17rprMIB 1 }
-
+   
 rprGeneral            OBJECT IDENTIFIER ::= { rprObjects 1 }
 rprProtocols          OBJECT IDENTIFIER ::= { rprObjects 2 }
 rprSpanCounters       OBJECT IDENTIFIER ::= { rprObjects 3 }
 rprClientCounters     OBJECT IDENTIFIER ::= { rprObjects 4 }
 rprSpanErrorCounters  OBJECT IDENTIFIER ::= { rprObjects 5 }
+rprSas                OBJECT IDENTIFIER ::= { rprObjects 6 }
+rprSasObjects         OBJECT IDENTIFIER ::= { rprSas 1 }
+rprSasCounters        OBJECT IDENTIFIER ::= { rprSas 2 }
+rprPirc               OBJECT IDENTIFIER ::= { rprObjects 7 }
+rprPircObjects        OBJECT IDENTIFIER ::= { rprPirc 1 }
+
 
 --
 -- Conformance 
 --
 
 rprConformance        OBJECT IDENTIFIER ::= { ieee802dot17rprMIB 2 } 
+
 
 --
 -- RPR interface table
@@ -140,7 +254,7 @@ rprIfTable OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The RPR interface table, extension to the ifTable.
-
+        
          All read-write attributes in this table are non-volatile,
          i.e. will be retained across system reset."
     ::= { rprGeneral 1 }
@@ -151,7 +265,7 @@ rprIfEntry OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "One such entry for every interface in the ifTable which 
-         has an ifType of RPR interface."
+         has an ifType of RPR interface, i.e. rpr(225)."
     INDEX { rprIfIndex }
     ::= { rprIfTable 1 }
 
@@ -185,7 +299,8 @@ rprIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprIfEntry 1 }
 
 rprIfStationsOnRing OBJECT-TYPE
@@ -394,7 +509,7 @@ rprIfWrapConfig OBJECT-TYPE
         "Indicates the configured protection mode, 
          steering or wrapping, in a MAC that supports both modes.
 
-         If wrap configured bit is set, the station will 
+         If rprIfWrapConfig is true, the station will 
          perform wrap protection during ring failures.
 
          If the station detects another station on the ring that
@@ -415,7 +530,7 @@ rprIfJumboFramePreferred OBJECT-TYPE
         "Indicates the preference of the manager to support jumbo frame
          in a MAC that supports jumbo frame.
 
-         The station advertises the 'logical and' of rprIfJumboFramePreferred
+         The station advertises the logical and of rprIfJumboFramePreferred
          and jumbo capable bit in the rprIfMacCapability.
 
          Default value for jumbo frame preferred is true. i.e. station
@@ -427,17 +542,43 @@ rprIfJumboFramePreferred OBJECT-TYPE
 
 rprIfMacOperModes OBJECT-TYPE
     SYNTAX        BITS {
-         strictOrder  (0),
-         dropBadFcs   (1)
+         strictOrder             (0),
+         dropBadFcs              (1),
+         sasEnabled              (2),
+         relaxedTransmission     (3),
+         permissiveTransmission  (4),
+         sasVlanAware            (5),
+         pircEnabled             (6),
+         pircPrimary             (7),
+         pircRevertive           (8),
+         pircLoadbalancing       (9)
         }
     MAX-ACCESS    read-only
     STATUS        current
     DESCRIPTION
         "The summary of the Mac operational modes.
          if strictOrder is set, the MAC operates in strict order mode.
-         if dropBadFcs is set, frames with bad FCS are dropped."
+         if dropBadFcs is set, frames with bad FCS are dropped.
+         if sasEnabled is set, then the SAS layer is present and enabled.
+         if relaxedTransmission is set, then the MAC is providing 
+            relaxed transmission service.
+         if permissiveTransmission is set, then the MAC is providing 
+            permissive transmission service.
+         if sasVlanAware is set, then SAS is VLAN aware.
+         if pircEnabled is set, then the PIRC layer is present and enabled.
+         if pircPrimary is set, then this MAC is the primary PIRC protection
+            group member.
+         if pircRevertive is set, then this MAC operates in PIRC protection
+            reversion mode is enabled.
+         if pircLoadbalancing is set, then this MAC operates in PIRC load-
+            balancing mode.
+         NOTE: Only one of the strictOrder, relaxedTransmission, or 
+         permissiveTransmission values is reported at any given time."
     REFERENCE
-        "IEEE 802.17 Subclause 6.2, forceStrict and copyBadFcs"
+        "IEEE 802.17 Subclause 6.2, copyBadFcs, enableSAS, and
+         transmissionControl, Subclause 14.2.2 optionSasVlanAware,
+         Subclause 6.2.1 enablePirc, Subclause 15.3.1 pircProv.pircPrimary,
+         pircProv.pircRevertive, pircProv.pircLoadBalancing."
     ::= { rprIfEntry 17 }
 
 rprIfRingOperModes OBJECT-TYPE
@@ -455,7 +596,7 @@ rprIfRingOperModes OBJECT-TYPE
          If at least one station doesn't support jumbo frames, 
          the jumboFrame bit in this attribute is set to false.
          Only if all stations support jumbo frames, the bit is true.
-
+         
          If at least one station wasn't configured to wrap, 
          the wrap bit in this attribute is set to false.
          Only if all stations configured to wrap, the bit is true.
@@ -478,8 +619,9 @@ rprIfCurrentStatus OBJECT-TYPE
         "Indicates the current status of the RPR interface.
          this attribute is used to generate alarm to the management system."
     REFERENCE
-        "IEEE 802.17 Subclause 11.2.9, topoInconsistencyDefect, duplicateSecMacAddressDefect, and maxStationsDefect"
-    ::= { rprIfEntry 19 }
+        "IEEE 802.17 Subclause 11.2.9, topoInconsistencyDefect, 
+            duplicateSecMacAddressDefect, and maxStationsDefect"
+::= { rprIfEntry 19 }
 
 rprIfLastChange OBJECT-TYPE
     SYNTAX        TimeStamp
@@ -503,10 +645,11 @@ rprIfChanges OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "Indicates number of times rprIfLastChange changed.
-
+        
          The discontinued counter value is indicated 
          by the ifCounterDiscontinuityTime value."
     ::= { rprIfEntry 21 }
+
 
 --
 -- RPR statistics management table
@@ -530,18 +673,18 @@ rprIfStatsControlTable OBJECT-TYPE
             rprIfStatsControlCountPointClear item to specify the 
             counting point on which he would like to perform the 
             statistics clearance.
-            In case that the user specified 'clearSpecificInterval'
+            In case that the user specified clearSpecificInterval
             in the rprIfStatsControlPeriodClear item, the user should 
             also set the specific interval to clear by setting 
             rprIfStatsControlIntervalClear.
             After setting these items, the user can activate the 
-            clear operation by setting rprIfStatsControlCommitClear
-            item to 'commit'.
+            clear operation by setting rprIfStatsControlCommitClear 
+            item to commit.
             The status of the clear operation (done of failed) is 
             indicated by the returned value of rprIfStatsControlCommitClear
             item.
-         2. Setting rprIfStatsControlPeriodClear to 'clearAllIntervals' and
-            rprIfStatsControlCountPointClear to 'clearWest' (for example)
+         2. Setting rprIfStatsControlPeriodClear to clearAllIntervals and
+            rprIfStatsControlCountPointClear to clearWest (for example)
             will clear all current and previous intervals, and day
             counters of the west side of the RPR MAC.
          3. The IntervalValidData of cleared interval should be set to false.
@@ -556,7 +699,7 @@ rprIfStatsControlEntry OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "One such entry for every interface in the ifTable which 
-         has an ifType of RPR interface."
+         has an ifType of RPR interface, i.e. rpr(225)."
     INDEX { rprIfStatsControlIfIndex }
     ::= { rprIfStatsControlTable 1 }
 
@@ -576,7 +719,8 @@ rprIfStatsControlIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprIfStatsControlEntry 1 }
 
 rprIfStatsControlPeriodClear OBJECT-TYPE
@@ -732,7 +876,8 @@ rprSpanIfIndex  OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprSpanEntry 1 }
 
 rprSpanId OBJECT-TYPE
@@ -786,9 +931,11 @@ rprSpanCurrentStatus OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "Indicates the current status of the RPR span.
-         this attribute is used to generate alarm to the management system."
+         this attribute is used to generate alarm to the management 
+         system."
     REFERENCE
-        "IEEE 802.17 Subclause 11.2.3, keepaliveTime, 11.2.9, miscablingDefect, and 8.2.3.2, LINK_STATUS"
+        "IEEE 802.17 Subclause 11.2.3, keepaliveTime, 11.2.9, 
+        miscablingDefect, and 8.2.3.2, LINK_STATUS"
     ::= { rprSpanEntry 5 }
 
 rprSpanLastChange OBJECT-TYPE
@@ -856,7 +1003,8 @@ rprSpanProtectionIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprSpanProtectionEntry 1 }
 
 rprSpanProtectionSpan OBJECT-TYPE
@@ -913,11 +1061,12 @@ rprSpanProtectionCommand OBJECT-TYPE
          unless it has been preempted, or idle if no command has been 
          written to this interface span since initialization.
 
+
          There is no pending of commands, that is if a command has 
          been preempted by a failure, when the failure clears the 
          command is not executed.
 
-         If the command cannot be executed because an equal or \
+         If the command cannot be executed because an equal or 
          higher priority request is in effect, an error is returned.
 
          writing idle to a span that has no pending protection
@@ -925,7 +1074,7 @@ rprSpanProtectionCommand OBJECT-TYPE
 
          The protection commands (arranged in ascending priority 
          order) are:
-
+    
          idle
          This command clears the protection for the specified 
          interface span.
@@ -989,6 +1138,7 @@ rprSpanProtectionLastActivationTime OBJECT-TYPE
         "IEEE 802.17 Subclause 11.6.5.5, IndicateEdgeState()"
     ::= { rprSpanProtectionEntry 8 }
 
+
 --
 -- RPR topology table
 --
@@ -1046,7 +1196,8 @@ rprTopoImageIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprTopoImageEntry 1 }
 
 rprTopoImageMacAddress OBJECT-TYPE
@@ -1109,7 +1260,7 @@ rprTopoImageInetAddressType OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "Denotes the address type of the station INET address
-         It should be set to 'unknown' if station INET address
+         It should be set to unknown if station INET address
          is not known."
     REFERENCE
         "IEEE 802.17 Subclause 11.2.6, managementAddressType"
@@ -1152,7 +1303,8 @@ rprTopoImageCapability OBJECT-TYPE
         supportsConservativeFairness - indicates the MAC supports
         conservative fairness algorithm."
     REFERENCE
-        "IEEE 802.17 Subclause 11.2.6, jumboPrefer, protConfig, and conservativeMode"
+        "IEEE 802.17 Subclause 11.2.6, jumboPrefer, protConfig, 
+        and conservativeMode"
     ::= { rprTopoImageEntry 9 }
 
 rprTopoImageRinglet0Hops OBJECT-TYPE
@@ -1254,7 +1406,9 @@ rprTopoImageStatus OBJECT-TYPE
                      wrapActiveWest               (2),
                      wrapActiveEast               (3),
                      receivedBadFcs               (4),
-                     receivedMultichokeFairness   (5)
+                     receivedMultichokeFairness   (5),
+                     receivedSasUser              (6),
+                     receivedPircUser             (7)
                   }
     MAX-ACCESS    read-only
     STATUS        current
@@ -1265,7 +1419,8 @@ rprTopoImageStatus OBJECT-TYPE
          events of reception frames with bad FCS,
          events of reception multichoke fairness frames."
     REFERENCE
-        "IEEE 802.17 Subclause 11.2.6, reachable, protConfig, spanProtState, badFcsUser, and multichokeUser"
+        "IEEE 802.17 Subclause 11.2.6, reachable, protConfig, spanProtState, 
+        badFcsUser, and multichokeUser, Subclause 11.2.5 SasUser, PircUser"
     ::= { rprTopoImageEntry 18 }
 
 --
@@ -1324,7 +1479,8 @@ rprFairnessIfIndex  OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprFairnessEntry 1 }
 
 rprFairnessRinglet OBJECT-TYPE
@@ -1418,6 +1574,7 @@ rprFairnessRampCoef OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The coefficient used for ramping a rate. 
+         
 
          The value is interpreted as 2 raised to the power
          specified by this attribute.
@@ -1655,6 +1812,7 @@ rprFairnessChanges OBJECT-TYPE
          by the ifCounterDiscontinuityTime value."
     ::= { rprFairnessEntry 21 }
 
+
 --
 -- The RPR OAM actions table
 --
@@ -1704,7 +1862,8 @@ rprOamIfIndex  OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprOamEntry 1 }
 
 rprOamActionType OBJECT-TYPE
@@ -1719,7 +1878,8 @@ rprOamActionType OBJECT-TYPE
          The valid values for this object are:
          (1) echo (2) flush."
     REFERENCE
-        "IEEE 802.17 Subclause 12.4.1, OAM_ECHO_REQ, and 12.4.3, OAM_FLUSH_REQ"
+        "IEEE 802.17 Subclause 12.4.1, OAM_ECHO_REQ, and 
+            12.4.3, OAM_FLUSH_REQ"
     DEFVAL { echo }
     ::= { rprOamEntry  2 }
 
@@ -1881,6 +2041,7 @@ rprOamResponseStatus OBJECT-TYPE
         were received till timeout."
     ::= { rprOamEntry 14 }
 
+
 --
 -- RPR changes summary group  
 --
@@ -1909,7 +2070,7 @@ rprIfChangeSummaryIfChanges OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "Number of times any instance of rprIfChanges changed.
-
+        
          The discontinued counter value is indicated 
          by the ifCounterDiscontinuityTime value."
     ::= { rprIfChangeSummaryObject 3 }
@@ -1952,6 +2113,7 @@ rprIfChangeSummaryFairnessChanges OBJECT-TYPE
          by the ifCounterDiscontinuityTime value."
     ::= { rprIfChangeSummaryObject 7 }
 
+
 --
 -- RPR ring interface current counters table
 --
@@ -1961,10 +2123,7 @@ rprSpanCountersCurrentTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-       "The RPR MAC Span interface current counters table.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+       "The RPR MAC Span interface current counters table."
     ::= { rprSpanCounters 1 }
 
 rprSpanCountersCurrentEntry OBJECT-TYPE
@@ -1984,6 +2143,7 @@ rprSpanCountersCurrentEntry OBJECT-TYPE
 RprSpanCountersCurrentEntry ::= SEQUENCE {
     rprSpanCurrentIfIndex                 InterfaceIndex,
     rprSpanCurrentSpan                    RprSpan,
+
     rprSpanCurrentInUcastClassAFrames     HCPerfCurrentCount,
     rprSpanCurrentInUcastClassAOctets     HCPerfCurrentCount,
     rprSpanCurrentInUcastClassBCirFrames  HCPerfCurrentCount,
@@ -1992,6 +2152,7 @@ RprSpanCountersCurrentEntry ::= SEQUENCE {
     rprSpanCurrentInUcastClassBEirOctets  HCPerfCurrentCount,
     rprSpanCurrentInUcastClassCFrames     HCPerfCurrentCount,
     rprSpanCurrentInUcastClassCOctets     HCPerfCurrentCount,
+
     rprSpanCurrentInMcastClassAFrames     HCPerfCurrentCount,
     rprSpanCurrentInMcastClassAOctets     HCPerfCurrentCount,
     rprSpanCurrentInMcastClassBCirFrames  HCPerfCurrentCount,
@@ -2000,6 +2161,7 @@ RprSpanCountersCurrentEntry ::= SEQUENCE {
     rprSpanCurrentInMcastClassBEirOctets  HCPerfCurrentCount,
     rprSpanCurrentInMcastClassCFrames     HCPerfCurrentCount,
     rprSpanCurrentInMcastClassCOctets     HCPerfCurrentCount,
+
     rprSpanCurrentOutUcastClassAFrames    HCPerfCurrentCount,
     rprSpanCurrentOutUcastClassAOctets    HCPerfCurrentCount,
     rprSpanCurrentOutUcastClassBCirFrames HCPerfCurrentCount,
@@ -2008,6 +2170,7 @@ RprSpanCountersCurrentEntry ::= SEQUENCE {
     rprSpanCurrentOutUcastClassBEirOctets HCPerfCurrentCount,
     rprSpanCurrentOutUcastClassCFrames    HCPerfCurrentCount,
     rprSpanCurrentOutUcastClassCOctets    HCPerfCurrentCount,
+
     rprSpanCurrentOutMcastClassAFrames    HCPerfCurrentCount,
     rprSpanCurrentOutMcastClassAOctets    HCPerfCurrentCount,
     rprSpanCurrentOutMcastClassBCirFrames HCPerfCurrentCount,
@@ -2024,7 +2187,8 @@ rprSpanCurrentIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprSpanCountersCurrentEntry 1 }
 
 rprSpanCurrentSpan OBJECT-TYPE
@@ -2324,6 +2488,7 @@ rprSpanCurrentOutMcastClassCOctets OBJECT-TYPE
          broadcast octets in the current interval."
     ::= { rprSpanCountersCurrentEntry 34 }
 
+
 --
 -- RPR ring interface interval counters
 --
@@ -2333,10 +2498,7 @@ rprSpanCountersIntervalTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-      "The RPR MAC Span interface interval counters table.
-
-       All attributes in this table are volatile,
-       i.e. will be cleared on system reset."
+      "The RPR MAC Span interface interval counters table."
     ::= { rprSpanCounters 2 }
 
 rprSpanCountersIntervalEntry OBJECT-TYPE
@@ -2362,6 +2524,7 @@ RprSpanCountersIntervalEntry ::= SEQUENCE {
     rprSpanIntervalValidData                TruthValue,
     rprSpanIntervalTimeElapsed              Unsigned32,
     rprSpanIntervalStartTime                DateAndTime,
+
     rprSpanIntervalInUcastClassAFrames      HCPerfIntervalCount,
     rprSpanIntervalInUcastClassAOctets      HCPerfIntervalCount,
     rprSpanIntervalInUcastClassBCirFrames   HCPerfIntervalCount,
@@ -2370,6 +2533,7 @@ RprSpanCountersIntervalEntry ::= SEQUENCE {
     rprSpanIntervalInUcastClassBEirOctets   HCPerfIntervalCount,
     rprSpanIntervalInUcastClassCFrames      HCPerfIntervalCount,
     rprSpanIntervalInUcastClassCOctets      HCPerfIntervalCount,
+
     rprSpanIntervalInMcastClassAFrames      HCPerfIntervalCount,
     rprSpanIntervalInMcastClassAOctets      HCPerfIntervalCount,
     rprSpanIntervalInMcastClassBCirFrames   HCPerfIntervalCount,
@@ -2378,6 +2542,7 @@ RprSpanCountersIntervalEntry ::= SEQUENCE {
     rprSpanIntervalInMcastClassBEirOctets   HCPerfIntervalCount,
     rprSpanIntervalInMcastClassCFrames      HCPerfIntervalCount,
     rprSpanIntervalInMcastClassCOctets      HCPerfIntervalCount,
+
     rprSpanIntervalOutUcastClassAFrames     HCPerfIntervalCount,
     rprSpanIntervalOutUcastClassAOctets     HCPerfIntervalCount,
     rprSpanIntervalOutUcastClassBCirFrames  HCPerfIntervalCount,
@@ -2386,6 +2551,7 @@ RprSpanCountersIntervalEntry ::= SEQUENCE {
     rprSpanIntervalOutUcastClassBEirOctets  HCPerfIntervalCount,
     rprSpanIntervalOutUcastClassCFrames     HCPerfIntervalCount,
     rprSpanIntervalOutUcastClassCOctets     HCPerfIntervalCount,
+
     rprSpanIntervalOutMcastClassAFrames     HCPerfIntervalCount,
     rprSpanIntervalOutMcastClassAOctets     HCPerfIntervalCount,
     rprSpanIntervalOutMcastClassBCirFrames  HCPerfIntervalCount,
@@ -2755,10 +2921,7 @@ rprSpanCountersDayTable OBJECT-TYPE
     DESCRIPTION
       "The RPR Mac Span Day Table contains the cumulative sum
        of the various statistics for the 24 hour period
-       preceding the current interval.
-
-       All attributes in this table are volatile,
-       i.e. will be cleared on system reset."
+       preceding the current interval."
     ::= { rprSpanCounters 3 }
 
 rprSpanCountersDayEntry OBJECT-TYPE
@@ -2774,6 +2937,7 @@ rprSpanCountersDayEntry OBJECT-TYPE
 RprSpanCountersDayEntry ::= SEQUENCE {
     rprSpanDayIfIndex                 InterfaceIndex,
     rprSpanDaySpan                    RprSpan,
+
     rprSpanDayInUcastClassAFrames     HCPerfTotalCount,
     rprSpanDayInUcastClassAOctets     HCPerfTotalCount,
     rprSpanDayInUcastClassBCirFrames  HCPerfTotalCount,
@@ -2782,6 +2946,7 @@ RprSpanCountersDayEntry ::= SEQUENCE {
     rprSpanDayInUcastClassBEirOctets  HCPerfTotalCount,
     rprSpanDayInUcastClassCFrames     HCPerfTotalCount,
     rprSpanDayInUcastClassCOctets     HCPerfTotalCount,
+
     rprSpanDayInMcastClassAFrames     HCPerfTotalCount,
     rprSpanDayInMcastClassAOctets     HCPerfTotalCount,
     rprSpanDayInMcastClassBCirFrames  HCPerfTotalCount,
@@ -2790,6 +2955,7 @@ RprSpanCountersDayEntry ::= SEQUENCE {
     rprSpanDayInMcastClassBEirOctets  HCPerfTotalCount,
     rprSpanDayInMcastClassCFrames     HCPerfTotalCount,
     rprSpanDayInMcastClassCOctets     HCPerfTotalCount,
+
     rprSpanDayOutUcastClassAFrames    HCPerfTotalCount,
     rprSpanDayOutUcastClassAOctets    HCPerfTotalCount,
     rprSpanDayOutUcastClassBCirFrames HCPerfTotalCount,
@@ -2798,6 +2964,7 @@ RprSpanCountersDayEntry ::= SEQUENCE {
     rprSpanDayOutUcastClassBEirOctets HCPerfTotalCount,
     rprSpanDayOutUcastClassCFrames    HCPerfTotalCount,
     rprSpanDayOutUcastClassCOctets    HCPerfTotalCount,
+
     rprSpanDayOutMcastClassAFrames    HCPerfTotalCount,
     rprSpanDayOutMcastClassAOctets    HCPerfTotalCount,
     rprSpanDayOutMcastClassBCirFrames HCPerfTotalCount,
@@ -3111,10 +3278,7 @@ rprSpanCountersStatsTable OBJECT-TYPE
       "The RPR Mac Span interface total counters table.
 
         The DiscontinuityTime for this table is indicated by 
-        ifCounterDiscontinuityTime defined in ifXTable.
-
-        All attributes in this table are volatile,
-        i.e. will be cleared on system reset."
+        ifCounterDiscontinuityTime defined in ifXTable."
     ::= { rprSpanCounters 4 }
 
 rprSpanCountersStatsEntry OBJECT-TYPE
@@ -3130,6 +3294,7 @@ rprSpanCountersStatsEntry OBJECT-TYPE
 RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsIfIndex                 InterfaceIndex,
     rprSpanStatsSpan                    RprSpan,
+
     rprSpanStatsInUcastClassAFrames     Counter64,
     rprSpanStatsInUcastClassAOctets     Counter64,
     rprSpanStatsInUcastClassBCirFrames  Counter64,
@@ -3138,6 +3303,7 @@ RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsInUcastClassBEirOctets  Counter64,
     rprSpanStatsInUcastClassCFrames     Counter64,
     rprSpanStatsInUcastClassCOctets     Counter64,
+
     rprSpanStatsInMcastClassAFrames     Counter64,
     rprSpanStatsInMcastClassAOctets     Counter64,
     rprSpanStatsInMcastClassBCirFrames  Counter64,
@@ -3146,6 +3312,7 @@ RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsInMcastClassBEirOctets  Counter64,
     rprSpanStatsInMcastClassCFrames     Counter64,
     rprSpanStatsInMcastClassCOctets     Counter64,
+
     rprSpanStatsInCtrlFrames            Counter64,
     rprSpanStatsInOamEchoFrames         Counter64,
     rprSpanStatsInOamFlushFrames        Counter64,
@@ -3153,6 +3320,7 @@ RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsInTopoAtdFrames         Counter64,
     rprSpanStatsInTopoChkSumFrames      Counter64,
     rprSpanStatsInTopoTpFrames          Counter64,
+
     rprSpanStatsOutUcastClassAFrames    Counter64,
     rprSpanStatsOutUcastClassAOctets    Counter64,
     rprSpanStatsOutUcastClassBCirFrames Counter64,
@@ -3161,6 +3329,7 @@ RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsOutUcastClassBEirOctets Counter64,
     rprSpanStatsOutUcastClassCFrames    Counter64,
     rprSpanStatsOutUcastClassCOctets    Counter64,
+
     rprSpanStatsOutMcastClassAFrames    Counter64,
     rprSpanStatsOutMcastClassAOctets    Counter64,
     rprSpanStatsOutMcastClassBCirFrames Counter64,
@@ -3169,13 +3338,20 @@ RprSpanCountersStatsEntry ::= SEQUENCE {
     rprSpanStatsOutMcastClassBEirOctets Counter64,
     rprSpanStatsOutMcastClassCFrames    Counter64,
     rprSpanStatsOutMcastClassCOctets    Counter64,
+
     rprSpanStatsOutCtrlFrames           Counter64,
     rprSpanStatsOutOamEchoFrames        Counter64,
     rprSpanStatsOutOamFlushFrames       Counter64,
     rprSpanStatsOutOamOrgFrames         Counter64,
     rprSpanStatsOutTopoAtdFrames        Counter64,
     rprSpanStatsOutTopoChkSumFrames     Counter64,
-    rprSpanStatsOutTopoTpFrames         Counter64
+    rprSpanStatsOutTopoTpFrames         Counter64,
+
+    rprSpanStatsInOamSasNotifyFrames    Counter64,
+    rprSpanStatsOutOamSasNotifyFrames   Counter64,
+    
+    rprSpanStatsInOamPircStatusFrames    Counter64,
+    rprSpanStatsOutOamPircStatusFrames   Counter64
     }
 
 rprSpanStatsIfIndex OBJECT-TYPE
@@ -3372,9 +3548,9 @@ rprSpanStatsInCtrlFrames OBJECT-TYPE
     DESCRIPTION
         "The number of received (PHY to MAC) control frames
          processed by this MAC.
-         This does not include control frames in transit,
+         This does not include control frames in transit, 
          i.e. a multicast control frame received from a ringlet
-         will be counted as In but not Out.
+         will be counted as In but not Out. 
          This does not include Fairness or idle frames."
     REFERENCE
         "IEEE 802.17 Subclause 7.2.5, toCtrlFrames"
@@ -3695,6 +3871,50 @@ rprSpanStatsOutTopoTpFrames OBJECT-TYPE
         "IEEE 802.17 Subclause 7.2.5, fromCtrlTopoTPFrames"
     ::= { rprSpanCountersStatsEntry 48 }
 
+rprSpanStatsInOamSasNotifyFrames OBJECT-TYPE
+    SYNTAX        Counter64
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of received (PHY to MAC) OAM SAS Notify
+         frames generated by this MAC."
+    REFERENCE
+        "IEEE 802.17 Subclause 7.2.5, toCtrlOamSasNotifyFrames"
+    ::= { rprSpanCountersStatsEntry 49 }
+
+rprSpanStatsOutOamSasNotifyFrames OBJECT-TYPE
+    SYNTAX        Counter64
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of transmitted (MAC to PHY) OAM SAS Notify
+         frames generated by this MAC."
+    REFERENCE
+        "IEEE 802.17 Subclause 7.2.5, fromCtrlOamSasNotifyFrames"
+    ::= { rprSpanCountersStatsEntry 50 }
+
+rprSpanStatsInOamPircStatusFrames OBJECT-TYPE
+    SYNTAX        Counter64
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of received (PHY to MAC) OAM PIRC status
+         frames generated by this MAC."
+    REFERENCE
+        "IEEE 802.17 Subclause 7.2.5, toCtrlOamPircStatusFrames"
+    ::= { rprSpanCountersStatsEntry 51 }
+
+rprSpanStatsOutOamPircStatusFrames OBJECT-TYPE
+    SYNTAX        Counter64
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of transmitted (MAC to PHY) OAM PIRC status
+         frames generated by this MAC."
+    REFERENCE
+        "IEEE 802.17 Subclause 7.2.5, fromCtrlOamPircStatusFrames"
+    ::= { rprSpanCountersStatsEntry 52 }
+
 --
 -- RPR Client interface current counters table
 --
@@ -3704,10 +3924,7 @@ rprClientCountersCurrentTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-        "The local station traffic current counters table.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+        "The local station traffic current counters table."
     ::= { rprClientCounters 1 }
 
 rprClientCountersCurrentEntry OBJECT-TYPE
@@ -3725,6 +3942,7 @@ rprClientCountersCurrentEntry OBJECT-TYPE
 
 RprClientCountersCurrentEntry ::= SEQUENCE {
     rprClientCurrentIfIndex                 InterfaceIndex,
+
     rprClientCurrentInUcastClassAFrames     HCPerfCurrentCount,
     rprClientCurrentInUcastClassAOctets     HCPerfCurrentCount,
     rprClientCurrentInUcastClassBCirFrames  HCPerfCurrentCount,
@@ -3733,6 +3951,7 @@ RprClientCountersCurrentEntry ::= SEQUENCE {
     rprClientCurrentInUcastClassBEirOctets  HCPerfCurrentCount,
     rprClientCurrentInUcastClassCFrames     HCPerfCurrentCount,
     rprClientCurrentInUcastClassCOctets     HCPerfCurrentCount,
+
     rprClientCurrentInMcastClassAFrames     HCPerfCurrentCount,
     rprClientCurrentInMcastClassAOctets     HCPerfCurrentCount,
     rprClientCurrentInMcastClassBCirFrames  HCPerfCurrentCount,
@@ -3741,6 +3960,7 @@ RprClientCountersCurrentEntry ::= SEQUENCE {
     rprClientCurrentInMcastClassBEirOctets  HCPerfCurrentCount,
     rprClientCurrentInMcastClassCFrames     HCPerfCurrentCount,
     rprClientCurrentInMcastClassCOctets     HCPerfCurrentCount,
+
     rprClientCurrentOutUcastClassAFrames    HCPerfCurrentCount,
     rprClientCurrentOutUcastClassAOctets    HCPerfCurrentCount,
     rprClientCurrentOutUcastClassBCirFrames HCPerfCurrentCount,
@@ -3749,6 +3969,7 @@ RprClientCountersCurrentEntry ::= SEQUENCE {
     rprClientCurrentOutUcastClassBEirOctets HCPerfCurrentCount,
     rprClientCurrentOutUcastClassCFrames    HCPerfCurrentCount,
     rprClientCurrentOutUcastClassCOctets    HCPerfCurrentCount,
+
     rprClientCurrentOutMcastClassAFrames    HCPerfCurrentCount,
     rprClientCurrentOutMcastClassAOctets    HCPerfCurrentCount,
     rprClientCurrentOutMcastClassBCirFrames HCPerfCurrentCount,
@@ -3765,7 +3986,8 @@ rprClientCurrentIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprClientCountersCurrentEntry 1 }
 
 rprClientCurrentInUcastClassAFrames OBJECT-TYPE
@@ -4056,6 +4278,7 @@ rprClientCurrentOutMcastClassCOctets OBJECT-TYPE
          octets in the current interval."
     ::= { rprClientCountersCurrentEntry 33 }
 
+
 --
 -- RPR client interface interval counters table
 --
@@ -4065,10 +4288,7 @@ rprClientCountersIntervalTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-        "The local station traffic interval counters table.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+        "The local station traffic interval counters table."
     ::= { rprClientCounters 2 }
 
 rprClientCountersIntervalEntry OBJECT-TYPE
@@ -4091,6 +4311,7 @@ RprClientCountersIntervalEntry ::= SEQUENCE {
     rprClientIntervalNumber                  Unsigned32,
     rprClientIntervalValidData               TruthValue,
     rprClientIntervalTimeElapsed             Unsigned32,
+
     rprClientIntervalInUcastClassAFrames     HCPerfIntervalCount,
     rprClientIntervalInUcastClassAOctets     HCPerfIntervalCount,
     rprClientIntervalInUcastClassBCirFrames  HCPerfIntervalCount,
@@ -4099,6 +4320,7 @@ RprClientCountersIntervalEntry ::= SEQUENCE {
     rprClientIntervalInUcastClassBEirOctets  HCPerfIntervalCount,
     rprClientIntervalInUcastClassCFrames     HCPerfIntervalCount,
     rprClientIntervalInUcastClassCOctets     HCPerfIntervalCount,
+
     rprClientIntervalInMcastClassAFrames     HCPerfIntervalCount,
     rprClientIntervalInMcastClassAOctets     HCPerfIntervalCount,
     rprClientIntervalInMcastClassBCirFrames  HCPerfIntervalCount,
@@ -4107,6 +4329,7 @@ RprClientCountersIntervalEntry ::= SEQUENCE {
     rprClientIntervalInMcastClassBEirOctets  HCPerfIntervalCount,
     rprClientIntervalInMcastClassCFrames     HCPerfIntervalCount,
     rprClientIntervalInMcastClassCOctets     HCPerfIntervalCount,
+
     rprClientIntervalOutUcastClassAFrames    HCPerfIntervalCount,
     rprClientIntervalOutUcastClassAOctets    HCPerfIntervalCount,
     rprClientIntervalOutUcastClassBCirFrames HCPerfIntervalCount,
@@ -4115,6 +4338,7 @@ RprClientCountersIntervalEntry ::= SEQUENCE {
     rprClientIntervalOutUcastClassBEirOctets HCPerfIntervalCount,
     rprClientIntervalOutUcastClassCFrames    HCPerfIntervalCount,
     rprClientIntervalOutUcastClassCOctets    HCPerfIntervalCount,
+
     rprClientIntervalOutMcastClassAFrames    HCPerfIntervalCount,
     rprClientIntervalOutMcastClassAOctets    HCPerfIntervalCount,
     rprClientIntervalOutMcastClassBCirFrames HCPerfIntervalCount,
@@ -4475,10 +4699,7 @@ rprClientCountersDayTable OBJECT-TYPE
     DESCRIPTION
       "The RPR Mac Client Day Table contains the cumulative sum
        of the various statistics for the 24 hour period
-       preceding the current interval.
-
-       All attributes in this table are volatile,
-       i.e. will be cleared on system reset."
+       preceding the current interval."
     ::= { rprClientCounters 3 }
 
 rprClientCountersDayEntry OBJECT-TYPE
@@ -4492,6 +4713,7 @@ rprClientCountersDayEntry OBJECT-TYPE
 
 RprClientCountersDayEntry ::= SEQUENCE {
     rprClientDayIfIndex                  InterfaceIndex,
+
     rprClientDayInUcastClassAFrames      HCPerfTotalCount,
     rprClientDayInUcastClassAOctets      HCPerfTotalCount,
     rprClientDayInUcastClassBCirFrames   HCPerfTotalCount,
@@ -4500,6 +4722,7 @@ RprClientCountersDayEntry ::= SEQUENCE {
     rprClientDayInUcastClassBEirOctets   HCPerfTotalCount,
     rprClientDayInUcastClassCFrames      HCPerfTotalCount,
     rprClientDayInUcastClassCOctets      HCPerfTotalCount,
+
     rprClientDayInMcastClassAFrames      HCPerfTotalCount,
     rprClientDayInMcastClassAOctets      HCPerfTotalCount,
     rprClientDayInMcastClassBCirFrames   HCPerfTotalCount,
@@ -4508,6 +4731,7 @@ RprClientCountersDayEntry ::= SEQUENCE {
     rprClientDayInMcastClassBEirOctets   HCPerfTotalCount,
     rprClientDayInMcastClassCFrames      HCPerfTotalCount,
     rprClientDayInMcastClassCOctets      HCPerfTotalCount,
+
     rprClientDayOutUcastClassAFrames     HCPerfTotalCount,
     rprClientDayOutUcastClassAOctets     HCPerfTotalCount,
     rprClientDayOutUcastClassBCirFrames  HCPerfTotalCount,
@@ -4516,6 +4740,7 @@ RprClientCountersDayEntry ::= SEQUENCE {
     rprClientDayOutUcastClassBEirOctets  HCPerfTotalCount,
     rprClientDayOutUcastClassCFrames     HCPerfTotalCount,
     rprClientDayOutUcastClassCOctets     HCPerfTotalCount,
+
     rprClientDayOutMcastClassAFrames     HCPerfTotalCount,
     rprClientDayOutMcastClassAOctets     HCPerfTotalCount,
     rprClientDayOutMcastClassBCirFrames  HCPerfTotalCount,
@@ -4816,10 +5041,7 @@ rprClientCountersStatsTable OBJECT-TYPE
         "The local station traffic total counters table.
 
          The DiscontinuityTime for this table is indicated by 
-         ifCounterDiscontinuityTime defined in ifXTable.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+         ifCounterDiscontinuityTime defined in ifXTable."
     ::= { rprClientCounters 4 }
 
 rprClientCountersStatsEntry OBJECT-TYPE
@@ -4833,6 +5055,7 @@ rprClientCountersStatsEntry OBJECT-TYPE
 
 RprClientCountersStatsEntry ::= SEQUENCE {
     rprClientStatsIfIndex                  InterfaceIndex,
+
     rprClientStatsInUcastClassAFrames      Counter64,
     rprClientStatsInUcastClassAOctets      Counter64,
     rprClientStatsInUcastClassBCirFrames   Counter64,
@@ -4841,6 +5064,7 @@ RprClientCountersStatsEntry ::= SEQUENCE {
     rprClientStatsInUcastClassBEirOctets   Counter64,
     rprClientStatsInUcastClassCFrames      Counter64,
     rprClientStatsInUcastClassCOctets      Counter64,
+
     rprClientStatsInMcastClassAFrames      Counter64,
     rprClientStatsInMcastClassAOctets      Counter64,
     rprClientStatsInMcastClassBCirFrames   Counter64,
@@ -4849,7 +5073,9 @@ RprClientCountersStatsEntry ::= SEQUENCE {
     rprClientStatsInMcastClassBEirOctets   Counter64,
     rprClientStatsInMcastClassCFrames      Counter64,
     rprClientStatsInMcastClassCOctets      Counter64,
+
     rprClientStatsInBcastFrames            Counter64,
+    
     rprClientStatsOutUcastClassAFrames     Counter64,
     rprClientStatsOutUcastClassAOctets     Counter64,
     rprClientStatsOutUcastClassBCirFrames  Counter64,
@@ -4858,6 +5084,7 @@ RprClientCountersStatsEntry ::= SEQUENCE {
     rprClientStatsOutUcastClassBEirOctets  Counter64,
     rprClientStatsOutUcastClassCFrames     Counter64,
     rprClientStatsOutUcastClassCOctets     Counter64,
+
     rprClientStatsOutMcastClassAFrames     Counter64,
     rprClientStatsOutMcastClassAOctets     Counter64,
     rprClientStatsOutMcastClassBCirFrames  Counter64,
@@ -4866,6 +5093,7 @@ RprClientCountersStatsEntry ::= SEQUENCE {
     rprClientStatsOutMcastClassBEirOctets  Counter64,
     rprClientStatsOutMcastClassCFrames     Counter64,
     rprClientStatsOutMcastClassCOctets     Counter64,
+
     rprClientStatsOutBcastFrames           Counter64
     }
 
@@ -5244,10 +5472,7 @@ rprSpanErrorCountersCurrentTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-        "The RPR Errors Current counters table.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+        "The RPR Errors Current counters table."
     ::= { rprSpanErrorCounters 1 }
 
 rprSpanErrorCountersCurrentEntry OBJECT-TYPE
@@ -5267,6 +5492,7 @@ rprSpanErrorCountersCurrentEntry OBJECT-TYPE
 RprSpanErrorCountersCurrentEntry ::= SEQUENCE {
     rprSpanErrorCurrentIfIndex                InterfaceIndex,
     rprSpanErrorCurrentSpan                   RprSpan,
+
     rprSpanErrorCurrentTtlExpFrames           HCPerfCurrentCount,
     rprSpanErrorCurrentTooLongFrames          HCPerfCurrentCount,
     rprSpanErrorCurrentTooShortFrames         HCPerfCurrentCount,
@@ -5277,6 +5503,7 @@ RprSpanErrorCountersCurrentEntry ::= SEQUENCE {
     rprSpanErrorCurrentBadAddrFrames          HCPerfCurrentCount,
     rprSpanErrorCurrentBadParityFrames        HCPerfCurrentCount,
     rprSpanErrorCurrentContainedFrames        HCPerfCurrentCount,
+
     rprSpanErrorCurrentScffErrors             HCPerfCurrentCount,
     rprSpanErrorCurrentErroredSeconds         HCPerfCurrentCount,
     rprSpanErrorCurrentSeverelyErroredSeconds HCPerfCurrentCount,
@@ -5289,7 +5516,8 @@ rprSpanErrorCurrentIfIndex OBJECT-TYPE
     STATUS        current
     DESCRIPTION
         "The ifIndex of this RPR interface."
-    REFERENCE   "RFC 2863, ifIndex"
+    REFERENCE
+        "RFC 2863, ifIndex"
     ::= { rprSpanErrorCountersCurrentEntry 1 }
 
 rprSpanErrorCurrentSpan OBJECT-TYPE
@@ -5427,6 +5655,7 @@ rprSpanErrorCurrentUnavailableSeconds OBJECT-TYPE
       "The number of unavailable seconds."
     ::= { rprSpanErrorCountersCurrentEntry 16 }
 
+
 --
 -- RPR error interval counters table
 --
@@ -5436,10 +5665,7 @@ rprSpanErrorCountersIntervalTable OBJECT-TYPE
     MAX-ACCESS    not-accessible
     STATUS        current
     DESCRIPTION
-        "The RPR Errors Interval counters table.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+        "The RPR Errors Interval counters table."
     ::= { rprSpanErrorCounters 2 }
 
 rprSpanErrorCountersIntervalEntry OBJECT-TYPE
@@ -5463,6 +5689,7 @@ RprSpanErrorCountersIntervalEntry ::= SEQUENCE {
     rprSpanErrorIntervalNumber                  Unsigned32,
     rprSpanErrorIntervalValidData               TruthValue,
     rprSpanErrorIntervalTimeElapsed             Unsigned32,
+
     rprSpanErrorIntervalTtlExpFrames            HCPerfIntervalCount,
     rprSpanErrorIntervalTooLongFrames           HCPerfIntervalCount,
     rprSpanErrorIntervalTooShortFrames          HCPerfIntervalCount,
@@ -5473,6 +5700,7 @@ RprSpanErrorCountersIntervalEntry ::= SEQUENCE {
     rprSpanErrorIntervalBadAddrFrames           HCPerfIntervalCount,
     rprSpanErrorIntervalBadParityFrames         HCPerfIntervalCount,
     rprSpanErrorIntervalContainedFrames         HCPerfIntervalCount,
+
     rprSpanErrorIntervalScffErrors              HCPerfIntervalCount,
     rprSpanErrorIntervalErroredSeconds          HCPerfIntervalCount,
     rprSpanErrorIntervalSeverelyErroredSeconds  HCPerfIntervalCount,
@@ -5673,10 +5901,7 @@ rprSpanErrorCountersDayTable OBJECT-TYPE
     DESCRIPTION
       "The RPR Mac Error Day Table contains the cumulative sum
        of the various statistics for the 24 hour period
-       preceding the current interval.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+       preceding the current interval."
     ::= { rprSpanErrorCounters 3 }
 
 rprSpanErrorCountersDayEntry OBJECT-TYPE
@@ -5692,6 +5917,7 @@ rprSpanErrorCountersDayEntry OBJECT-TYPE
 RprSpanErrorCountersDayEntry ::= SEQUENCE {
     rprSpanErrorDayIfIndex                InterfaceIndex,
     rprSpanErrorDaySpan                   RprSpan,
+
     rprSpanErrorDayTtlExpFrames           HCPerfTotalCount,
     rprSpanErrorDayTooLongFrames          HCPerfTotalCount,
     rprSpanErrorDayTooShortFrames         HCPerfTotalCount,
@@ -5702,6 +5928,7 @@ RprSpanErrorCountersDayEntry ::= SEQUENCE {
     rprSpanErrorDayBadAddrFrames          HCPerfTotalCount,
     rprSpanErrorDayBadParityFrames        HCPerfTotalCount,
     rprSpanErrorDayContainedFrames        HCPerfTotalCount,
+
     rprSpanErrorDayScffErrors             HCPerfTotalCount,
     rprSpanErrorDayErroredSeconds         HCPerfTotalCount,
     rprSpanErrorDaySeverelyErroredSeconds HCPerfTotalCount,
@@ -5863,10 +6090,7 @@ rprSpanErrorCountersStatsTable OBJECT-TYPE
         "The RPR Errors total counters table.
 
          The DiscontinuityTime for this table is indicated by 
-         ifCounterDiscontinuityTime defined in ifXTable.
-
-         All attributes in this table are volatile,
-         i.e. will be cleared on system reset."
+         ifCounterDiscontinuityTime defined in ifXTable."
     ::= { rprSpanErrorCounters 4 }
 
 rprSpanErrorCountersStatsEntry OBJECT-TYPE
@@ -5882,6 +6106,7 @@ rprSpanErrorCountersStatsEntry OBJECT-TYPE
 RprSpanErrorCountersStatsEntry ::= SEQUENCE {
     rprSpanErrorStatsIfIndex                InterfaceIndex,
     rprSpanErrorStatsSpan                   RprSpan,
+
     rprSpanErrorStatsTtlExpFrames           Counter64,
     rprSpanErrorStatsTooLongFrames          Counter64,
     rprSpanErrorStatsTooShortFrames         Counter64,
@@ -5892,6 +6117,7 @@ RprSpanErrorCountersStatsEntry ::= SEQUENCE {
     rprSpanErrorStatsBadAddrFrames          Counter64,
     rprSpanErrorStatsBadParityFrames        Counter64,
     rprSpanErrorStatsContainedFrames        Counter64,
+
     rprSpanErrorStatsScffErrors             Counter64
     }
 
@@ -6038,6 +6264,1052 @@ rprSpanErrorStatsScffErrors OBJECT-TYPE
         "IEEE 802.17 Subclause 12.5.1.2, scffErrors"
     ::= { rprSpanErrorCountersStatsEntry 13 }
 
+
+-- 
+-- 802.17b SAS tables
+-- 
+
+-- 
+-- SDB table information.
+-- 
+
+rprSasSummaryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprSasSummaryEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table that reports information about SDB 
+        tables for each RPR interface running SAS."
+    ::= { rprSasObjects 1 }
+
+rprSasSummaryEntry OBJECT-TYPE
+    SYNTAX      RprSasSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a specific SDB.
+        
+         The rprSasSummarySdbPurgeCmd, rprSasSummarySdbPurgeScopeSingle
+         and rprSasSummarySdbPurgeScopeMap read-write attributes in 
+         this table are volatile, i.e. will be cleared on system reset.
+
+         All other read-write attributes in this table are non-volatile,
+         i.e. will be retained across system reset."
+    INDEX   { rprSasSummaryIfIndex }
+    ::= { rprSasSummaryTable 1 }
+
+RprSasSummaryEntry ::= SEQUENCE {
+        rprSasSummaryIfIndex                    InterfaceIndex,
+        rprSasSummaryDynamicCount               Unsigned32,
+        rprSasSummaryStaticUcastCount           Unsigned32,
+        rprSasSummaryStaticMcastCount           Unsigned32,
+        rprSasSummaryAgingTime                  Unsigned32,
+        rprSasSummaryStdCleave                  TruthValue,
+        rprSasSummarySdbPurgeCmd                INTEGER,
+        rprSasSummarySdbPurgeScopeSingle        Unsigned32,
+        rprSasSummarySdbPurgeScopeMap           OCTET STRING
+    }
+
+rprSasSummaryIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface running SAS."
+    ::= { rprSasSummaryEntry 1 }
+
+rprSasSummaryDynamicCount OBJECT-TYPE
+    SYNTAX       Unsigned32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The current number of dynamic entries in this interfaces SDB."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.1 numDynamicEntries"
+    ::= { rprSasSummaryEntry 2 }
+
+rprSasSummaryStaticUcastCount OBJECT-TYPE
+    SYNTAX       Unsigned32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The current number of static unicast entries in this 
+        interfaces SDB."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.1 NumStaticUcastEntries"
+    ::= { rprSasSummaryEntry 3 }
+
+rprSasSummaryStaticMcastCount OBJECT-TYPE
+    SYNTAX       Unsigned32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The current number of static multicast entries in this 
+        interfaces SDB."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.1 NumStaticMcastEntries."
+    ::= { rprSasSummaryEntry 4 }
+
+rprSasSummaryAgingTime OBJECT-TYPE
+    SYNTAX        Unsigned32 (10..1000000)
+    UNITS         "seconds"
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The aging timer used for dynamic entries in the SDB.  
+         When an entry is created or updated its age is reset to 0. 
+         Entries are removed when their age reaches or exceeds the value 
+         specified by this attribute."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.1 sbdAgingTimer"
+	DEFVAL  { 300 }
+    ::= { rprSasSummaryEntry 5 }
+
+rprSasSummaryStdCleave OBJECT-TYPE
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "This attribute reports if this RPR station uses the standard
+         cleave point algorithm when flooding SAS traffic onto the ring."
+    REFERENCE
+        "IEEE 802.17b Section 6.2.1 stdCleave"
+    ::= { rprSasSummaryEntry 6 }
+
+rprSasSummarySdbPurgeCmd OBJECT-TYPE
+    SYNTAX        INTEGER {
+                    idle(1),
+                    purgeAll(2),
+                    purgeVid(3),
+                    purgeMsti(4),
+                    purgeVidMap(5),
+                    purgeMstiMap(6)
+                    }
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION       
+        "This attribute is used to perform a full or partial purge of 
+         the SAS dynamic (not static) database for this RPR interface.
+         This attribute has no effect on the configured static entries.
+
+         If the attribute is set to purgeAll then all entries in the
+         SAS database are purged.
+
+         If the attribute is set to purgeVid then the value of 
+         rprSasSummarySdbPurgeScopeSingle specifies the VID to be purged
+         according to the semantics of VlanIdOrNone.
+
+         If the attribute is set to purgeMsti then the value of 
+         rprSasSummarySdbPurgeScopeSingle specifies the MSTI to be purged.
+
+         If the attribute is set to purgeVidMap then the value of 
+         rprSasSummarySdbPurgeScopeMap specifies the set of VIDs to be purged.
+
+         If the attribute is set to purgeMstiMap then the value of 
+         rprSasSummarySdbPurgeScopeMap specifies the MSTIs to be purged."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.2 purgeScope"
+	DEFVAL  { idle }
+    ::= { rprSasSummaryEntry 7 }
+
+rprSasSummarySdbPurgeScopeSingle OBJECT-TYPE
+    SYNTAX        Unsigned32(0..4095)
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This attribute is used to specify a  VID or MSTI value used 
+        to select entries to be purged when rprSasSummarySdbPurgeCmd
+        is set to purgeVid or purgeMsti. 
+
+        This attribute is ignored if rprSasSummarySdbPurgeCmd is 
+        set to purgeAll, purgeVidMap or purgeMstiMap.
+        
+        Provides the VID value to be used when rprSasSummaryPurgeCmd 
+        is set to purgeVid.
+        Provides the MSTI value to be used when rprSasSummaryPurgeCmd 
+        is set to purgeMSTI."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.2 purgeValue"
+	DEFVAL  { 0 }
+    ::= { rprSasSummaryEntry 8 }
+
+rprSasSummarySdbPurgeScopeMap OBJECT-TYPE
+    SYNTAX        OCTET STRING(SIZE(0..512))
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This attribute is used to specify a  VID or MSTI map used 
+        to select entries to be purged when rprSasSummarySdbPurgeCmd
+        is set to purgeVidMap or purgeMstiMap.
+
+        This object is a octet string of length from 0 to 512 bytes. 
+        Each bit in the octet string represents a single VID or MSTI 
+        value from value 0 to value 4095. The first bit of the first 
+        octet corresponds to VID/MSTI value 0. The last bit of the 
+        first octet corresponds to VID/MSTI value 7. The second octet
+        represents values 8 though 15. The 512th octet represents 
+        values 4088 though 4095.
+
+        Note that is the length of this octet string is less than the
+        maximum length, all omitted octets are presumed to contain the
+        value zero. This applies to both set and get operations. A 
+        string of length zero string is an empty map.
+
+        This attribute is ignored if rprSasSummarySdbPurgeCmd is 
+        set to purgeAll, purgeVid or purgeMsti.
+        
+        Provides the map of VID values to be used when rprSasSummaryPurgeCmd 
+        is set to purgeVidMap.
+        Provides the map of MSTI values to be used when rprSasSummaryPurgeCmd 
+        is set to purgeMstiMap."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.2 purgeValue"
+	DEFVAL  { "" }
+    ::= { rprSasSummaryEntry 9 }
+
+
+
+-- 
+-- The unicast MAC address table
+-- 
+
+rprSasDbTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprSasDbEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table that contains unicast address association entries,
+        including both dynamic (i.e., learned) and static entries.
+        Except for VID-only static entries, these entries associate 
+        a MAC address (provided in the MA_DATA.request destination_address 
+        parameter) and SAS Database ID value with an RPR station address.
+        A static VID-only entry ignores the MAC address."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.2"
+    ::= { rprSasObjects 2 }
+
+rprSasDbEntry OBJECT-TYPE
+    SYNTAX      RprSasDbEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A SDB unicast assocation entry."
+    INDEX   { rprSasDbIfIndex, 
+              rprSasDbId, 
+              rprSasDbAddr }
+    ::= { rprSasDbTable 1 }
+
+RprSasDbEntry ::=
+    SEQUENCE {
+        rprSasDbIfIndex             InterfaceIndex,
+        rprSasDbId                  RprSasDbIdValue,
+        rprSasDbAddr                MacAddress,
+        rprSasDbTargetAddr          MacAddress,
+        rprSasDbEntryStatus         INTEGER
+    }
+
+rprSasDbIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface containing this SDB."
+    REFERENCE
+        "RFC 2863, ifIndex"
+    ::= { rprSasDbEntry 1 }
+
+rprSasDbId OBJECT-TYPE
+    SYNTAX       RprSasDbIdValue
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The identity of this SDB. 
+        If this MAC interface has a bridging client, this is the 
+        same as the dot1qFdbId value used in the corresponding 
+        bridge relay FDB entry.
+        If the MAC interface does not have a bridging client, then 
+        the value used is 1.
+        The value of 1 is used when SAS is VLAN-unaware."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.2 sdbEntryFid"
+   ::= { rprSasDbEntry 2 }
+
+rprSasDbAddr OBJECT-TYPE
+    SYNTAX      MacAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unicast destination MAC address for this entry.
+         Except for VID-only static entries, this is compared to the 
+         MA_DATA.request destination_address parameter.
+
+         For a VID-only static entry, this attribute is set to the 
+         broadcast address FF-FF-FF-FF-FF-FF and ignored in the table 
+         search"
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.2 sdbEntryDestAddr"
+    ::= { rprSasDbEntry 3 }
+
+rprSasDbTargetAddr OBJECT-TYPE
+    SYNTAX      MacAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The target address (i.e. local RPR station address) associated 
+        with this entry."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.2 sdbEntryTargetAddr"
+    ::= { rprSasDbEntry 4 }
+
+rprSasDbEntryStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    other(1),
+                    invalid(2),
+                    learned(3),
+                    self(4),
+                    mgmt(5)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The status of this entry.  The meanings of the values
+        are:
+            other(1) - none of the following.  This includes
+                the case where some other MIB object (not the
+                corresponding instance of rprSasDbTargetAddr, nor an
+                entry in the rprSasStaticUcastTable) created the entry.
+            invalid(2) - this entry is no longer valid (e.g., has 
+                aged out), but has not yet been flushed from the table.
+            learned(3) - the value of the corresponding instance
+                of rprSasDbTargetAddr was learned and is being used.
+            self(4) - represents the local station address.
+            mgmt(5) - created using an entry in the rprSasStaticAddress 
+                table."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.2 sdbEntryType"
+    ::= { rprSasDbEntry 5 }
+
+
+-- 
+-- The static unicast MAC address table
+-- 
+
+rprSasStaticUcastTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprSasStaticUcastEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table containing static association entries for 
+        unicast MAC addresses configured by managment.
+        These entries associate a MAC address provided in a 
+        MA_DATA.request destination_address parameter
+        with an RPR station address.
+        This table also supports VID only association entries
+        which direct all traffic with a given VID (regardless
+        of the destination_address) to the specified RPR 
+        station address.
+        
+        All read-write attributes in this table are non-volatile,
+        i.e. will be retained across system reset."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.4"
+    ::= { rprSasObjects 3 }
+
+rprSasStaticUcastEntry OBJECT-TYPE
+    SYNTAX      RprSasStaticUcastEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A statically configured SDB unicast assocation entry."
+    INDEX   {
+        rprSasStaticUcastIfIndex, 
+        rprSasStaticUcastVid,
+        rprSasStaticUcastAddr
+    }
+    ::= { rprSasStaticUcastTable 1 }
+
+RprSasStaticUcastEntry ::=
+    SEQUENCE {
+        rprSasStaticUcastIfIndex            InterfaceIndex,
+        rprSasStaticUcastVid                VlanIdOrNone,
+        rprSasStaticUcastAddr               MacAddress,
+        rprSasStaticUcastVidOnly            TruthValue,
+        rprSasStaticUcastTargetAddr         MacAddress,
+        rprSasStaticUcastRowStatus          RowStatus
+    }
+
+rprSasStaticUcastIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface containing this SDB."
+    REFERENCE
+        "RFC 2863, ifIndex"
+    ::= { rprSasStaticUcastEntry 1 }
+
+rprSasStaticUcastVid OBJECT-TYPE
+    SYNTAX       VlanIdOrNone
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The VLAN ID for this static entry.
+        The value of 0 is used when SAS is VLAN-unaware or for
+        untagged or priority tagged frames."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.4 sdbStaticUcastVid"
+    ::= { rprSasStaticUcastEntry 2 }
+
+rprSasStaticUcastAddr OBJECT-TYPE
+    SYNTAX      MacAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+       "The unicast MAC address for this entry.
+        This is compared to the MA_DATA.request destination_address 
+        parameter when rprSasStaticUcastVidOnly is set to false.
+        If rprSasStaticUcastVidOnly is set to true, this attribute 
+        is not used in the SAS lookup, and must be set to the 
+        broadcast address FF-FF-FF-FF-FF-FF."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.4 sdbStaticUcastDestAddr"
+    ::= { rprSasStaticUcastEntry 3 }
+
+rprSasStaticUcastVidOnly OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute indicates if this entry matches on VID only,
+        ignoring the value of MA_DATA.request destination address 
+        parameter (including not checking for unicast vs. multicast).
+        Setting this attribute to true means all frames being 
+        transmitted with the matching VID value (regardless of the 
+        destination address) will match this entry and be sent to 
+        the station specified in rprSasStaticUcastTargetAddr."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.4 sdbStaticUcastType"
+    DEFVAL { false }
+    ::= { rprSasStaticUcastEntry 4 }
+
+rprSasStaticUcastTargetAddr OBJECT-TYPE
+    SYNTAX      MacAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The local RPR station address associated with this entry."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.4 sdbStaticUcastTargetAddr"
+    ::= { rprSasStaticUcastEntry 5 }
+
+rprSasStaticUcastRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute is used to control (e.g., create, delete, etc) 
+        entries from this table as described in SNMPv2-TC.
+
+        None of the other writable objects in a row can be changed 
+        if the status is active(1).
+
+        All read-create objects must have valid and consistent
+        values before the row can be activated."
+    REFERENCE
+        "RFC 2579, RowStatus and IEEE 802.17b section 14.2.5.4 
+        sdbStaticUcastState"
+    ::= { rprSasStaticUcastEntry 6 }
+
+
+-- 
+-- The static multicast MAC address table
+-- 
+
+rprSasStaticMcastTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprSasStaticMcastEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table containing static association entries for
+         multicast MAC addresses configured by managment.
+         These entries associate a destination MAC address 
+         (and optionally VLAN ID) with east and west hop counts.
+        
+        All read-write attributes in this table are non-volatile,
+        i.e. will be retained across system reset."
+    REFERENCE   "IEEE 802.17b Section 14.2.5.4."
+::= { rprSasObjects 4 }
+
+rprSasStaticMcastEntry OBJECT-TYPE
+    SYNTAX      RprSasStaticMcastEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A statically configured entry for a multicast MAC address."
+    INDEX   {
+        rprSasStaticMcastIfIndex, 
+        rprSasStaticMcastVid,
+        rprSasStaticMcastAddr
+    }
+    ::= { rprSasStaticMcastTable 1 }
+
+RprSasStaticMcastEntry ::=
+    SEQUENCE {
+        rprSasStaticMcastIfIndex            InterfaceIndex,
+        rprSasStaticMcastVid                VlanIdOrNone,
+        rprSasStaticMcastAddr               MacAddress,
+        rprSasStaticMcastHopsRinglet0       RprRingHopCount,
+        rprSasStaticMcastHopsRinglet1       RprRingHopCount,
+        rprSasStaticMcastExtend             TruthValue,
+        rprSasStaticMcastRowStatus          RowStatus
+    }
+
+rprSasStaticMcastIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface containing this SDB."
+    REFERENCE
+        "RFC 2863, ifIndex"
+    ::= { rprSasStaticMcastEntry 1 }
+
+rprSasStaticMcastVid OBJECT-TYPE
+    SYNTAX       VlanIdOrNone
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The VLAN ID for this static entry.
+        The value of 0 is used when SAS is VLAN-unaware or for
+        untagged or priority tagged frames."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.5 sdbStaticMcastVid"
+   ::= { rprSasStaticMcastEntry 2 }
+
+rprSasStaticMcastAddr OBJECT-TYPE
+    SYNTAX      MacAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The multicast MAC address for this entry.
+        This is compared to the MA_DATA.request destination_address 
+        parameter."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.5 sdbStaticMcastAddr"
+    ::= { rprSasStaticMcastEntry 3 }
+
+rprSasStaticMcastHopsRinglet0 OBJECT-TYPE
+    SYNTAX      RprRingHopCount
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of hops to send frames matching this entry 
+        on ringlet0.
+        A value of 0 means that the frames are not sent on ringlet0."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.5 sdbStaticMcastHopsRinglet0"
+    DEFVAL { 0 }
+    ::= { rprSasStaticMcastEntry 4 }
+
+rprSasStaticMcastHopsRinglet1 OBJECT-TYPE
+    SYNTAX      RprRingHopCount
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of hops to send frames matching this entry 
+        on ringlet1.
+        A value of 0 means that the frames are not sent on ringlet1."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.5 sdbStaticMcastHopsRinglet1"
+    DEFVAL { 0 }
+    ::= { rprSasStaticMcastEntry 5 }
+
+rprSasStaticMcastExtend OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute is used to control if the frames that use this 
+        entry always extended and sent with the SAS group address.
+        Frames extended like this are used by the SAS association 
+        learning entity on station that receive the frame.
+        A value of true means that the frames are always sent extended 
+        with the SAS group address as the outer destination address."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.5.5 sdbStaticMcastExtend"
+    DEFVAL { true }
+    ::= { rprSasStaticMcastEntry 6 }
+
+rprSasStaticMcastRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute is used to control (e.g., create, delete, etc) 
+        entries from this table as described in SNMPv2-TC.
+
+        None of the other writable objects in a row can be changed 
+        if the status is active(1).
+
+        All read-create objects must have valid and consistent
+        values before the row can be activated."
+    REFERENCE   
+        "RFC 2579, RowStatus and IEEE 802.17b Section 14.2.5.5 
+         sdbStaticMcastState."
+    ::= { rprSasStaticMcastEntry 7 }
+
+-- 
+-- Sas Counters.
+-- 
+
+rprSasCountersStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprSasCountersStatsEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+       "The SAS interface total counters table.
+
+        The DiscontinuityTime for this table is indicated by 
+        ifCounterDiscontinuityTime defined in ifXTable."
+    ::= { rprSasCounters 1 }
+
+rprSasCountersStatsEntry OBJECT-TYPE
+    SYNTAX      RprSasCountersStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Statistics for an RPR interface with SAS enabled."
+    INDEX   { rprSasCountersStatsIfIndex }
+    ::= { rprSasCountersStatsTable 1 }
+
+RprSasCountersStatsEntry ::= SEQUENCE {
+        rprSasCountersStatsIfIndex                 InterfaceIndex,
+        rprSasCountersStatsLocalPurges             Counter64,
+        rprSasCountersStatsTopologyPurges          Counter64,
+        rprSasCountersStatsNotifyPurges            Counter64,
+        rprSasCountersStatsLearnFulls              Counter64,
+        rprSasCountersStatsTxDirectedFrames        Counter64,
+        rprSasCountersStatsTxUndirectedFrames      Counter64,
+        rprSasCountersStatsTxMcastScopedFrames     Counter64
+    }
+
+rprSasCountersStatsIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface running SAS."
+    REFERENCE   
+        "RFC 2863, ifIndex"
+    ::= { rprSasCountersStatsEntry 1 }
+
+rprSasCountersStatsLocalPurges OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of locally initiated SDB purges."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sdbLocalPurges"
+    ::= { rprSasCountersStatsEntry 2 }
+
+rprSasCountersStatsTopologyPurges OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of topology initiated SDB purges."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sdbTopologyPurges"
+    ::= { rprSasCountersStatsEntry 3 }
+
+rprSasCountersStatsNotifyPurges OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of OAM SAS Notify initiated SDB purges."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sdbNotifyPurges"
+    ::= { rprSasCountersStatsEntry 4 }
+
+rprSasCountersStatsLearnFulls OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of times SAS learning could not add a new entry 
+        due to SDB occupancy and either overwrote an existing entry 
+        or did not learn the new information."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sdbLearnFulls"
+    ::= { rprSasCountersStatsEntry 5 }
+
+rprSasCountersStatsTxDirectedFrames OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of directed frames sent by SAS on this interface."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sasTxDirectedFrames"
+    ::= { rprSasCountersStatsEntry 6 }
+
+rprSasCountersStatsTxUndirectedFrames OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of undirected frames sent by SAS on this interface."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sasTxUndirectedFrames"
+    ::= { rprSasCountersStatsEntry 7 }
+
+rprSasCountersStatsTxMcastScopedFrames OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The number of multicast scoped frames sent by SAS on
+        this interface."
+    REFERENCE
+        "IEEE 802.17b Section 14.2.6 sasTxMcastScopedFrames"
+    ::= { rprSasCountersStatsEntry 8 }
+
+
+-- 
+-- 802.17c PIRC tables
+-- 
+
+-- 
+-- PIRC Configuration table
+-- 
+
+rprPircConfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprPircConfEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table for configuration of PIRC related attributes,
+         for each RPR interface running PIRC."
+    ::= { rprPircObjects 1 }
+
+rprPircConfEntry OBJECT-TYPE
+    SYNTAX      RprPircConfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Attributes of MAC PIRC functionality.
+         All the attributes in this table are non-volatile,
+         i.e. will be retained across system reset."
+    INDEX   { rprPircConfIfIndex }
+    ::= { rprPircConfTable 1 }
+
+RprPircConfEntry ::= SEQUENCE {
+        rprPircConfIfIndex                      InterfaceIndex,
+        rprPircConfPrimary                      TruthValue,
+        rprPircConfRevertive                    TruthValue,
+        rprPircConfLoadBalancing                TruthValue,
+        rprPircConfFastMateMsgRpt               Unsigned32,
+        rprPircConfFastMateMsgInterval          Unsigned32,
+        rprPircConfSlowMateMsgInterval          Unsigned32,
+        rprPircConfWtrTimeout                   Unsigned32,
+        rprPircConfPcTimeout                    Unsigned32,
+        rprPircConfMateKeepAliveInterval        Unsigned32,
+        rprPircConfProtectionCommand            INTEGER
+    }
+
+rprPircConfIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface running PIRC."
+    ::= { rprPircConfEntry 1 }
+
+rprPircConfPrimary OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates that this station is the primary station in
+         the protection group."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.pircPrimary."
+    DEFVAL { true }
+    ::= { rprPircConfEntry 2 }
+
+rprPircConfRevertive OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates that this station will return to PIRC noRequest
+         state after WTR interval expires."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.pircRevertive."
+    DEFVAL { false }
+    ::= { rprPircConfEntry 3 }
+
+rprPircConfLoadBalancing OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates that this station operates in PIRC load-balancing
+         mode."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.pircLoadBalancing."
+    DEFVAL { false }
+    ::= { rprPircConfEntry 4 }
+
+rprPircConfFastMateMsgRpt OBJECT-TYPE
+    SYNTAX       Unsigned32 (1..10)
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the number of times a PIRC mate message shall 
+         be retransmitted after PIRC status change."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.fastMateMsgRpt."
+    DEFVAL { 3 }
+    ::= { rprPircConfEntry 5 }
+
+rprPircConfFastMateMsgInterval OBJECT-TYPE
+    SYNTAX       Unsigned32 (1..1000)
+    UNITS        "milliseconds" 
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the time interval between PIRC mate message
+         retransmission after PIRC status change."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.fastMateMsgInterval."
+    DEFVAL { 10 }
+    ::= { rprPircConfEntry 6 }
+
+rprPircConfSlowMateMsgInterval OBJECT-TYPE
+    SYNTAX       Unsigned32 (1..1000)
+    UNITS        "10 milliseconds" 
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the time interval between periodic PIRC mate
+         message."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.slowMateMsgInterval."
+    DEFVAL { 10 }
+    ::= { rprPircConfEntry 7 }
+
+rprPircConfWtrTimeout OBJECT-TYPE
+    SYNTAX       Unsigned32 (0..100)
+    UNITS        "Seconds" 
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the PIRC WTR timeout interval."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.wtrTimeout."
+    DEFVAL { 10 }
+    ::= { rprPircConfEntry 8 }
+
+rprPircConfPcTimeout OBJECT-TYPE
+    SYNTAX       Unsigned32 (0..100)
+    UNITS        "10 milliseconds" 
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the PIRC containment timeout interval."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.pcTimeout."
+    DEFVAL { 5 }
+    ::= { rprPircConfEntry 9 }
+
+rprPircConfMateKeepAliveInterval OBJECT-TYPE
+    SYNTAX       Unsigned32 (3..10000)
+    UNITS        "10 milliseconds" 
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Indicates the time interval without reception of any PIRC
+         mate message for determining loss of connectivity with
+         PIRC mate."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.1 pircProv.mateKeepAliveInterval."
+    DEFVAL { 35 }
+    ::= { rprPircConfEntry 10 }
+
+rprPircConfProtectionCommand OBJECT-TYPE
+    SYNTAX        INTEGER {
+                    idle            (1),
+                    manualSwitch    (2),
+                    forcedSwitch    (3)
+                  }
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The PIRC protection mode requested by management for the
+         local PIRC station, according to the set of rules describing
+         the PIRC protection.
+
+         When read, this object returns the last PIRC command written 
+         unless it has been preempted, or idle if no PIRC command has
+         been written to this station since initialization.
+
+         There is no pending of commands, that is if a PIRC command
+         has been preempted by a PIRC failure, when the PIRC failure
+         clears the PIRC command is not executed.
+
+         If the PIRC command cannot be executed because an equal or 
+         higher priority PIRC request is in effect, an error is returned.
+
+         writing idle to a station that has no pending PIRC protection
+         command, has no affect. An idle clears an active PIRC WTR state.
+
+         The protection commands (arranged in ascending priority 
+         order) are:
+    
+         idle
+         This command clears the PIRC protection for the station. 
+         This value should be returned by a read request when no 
+         PIRC protection command has been written to the object.
+
+         manualSwitch
+         A PIRC protection command for the station. This PIRC
+         command doesn't have precedence over automatic PIRC protection, 
+         and therefore it can't preempt an existing automatic PIRC
+         protection request.
+
+         forcedSwitch
+         A PIRC command for the station. This PIRC command has
+         precedence over automatic PIRC protection, and therefore it can 
+         preempt an existing automatic PIRC protection request.
+
+         Default value of PIRC protection command is idle."
+    REFERENCE
+        "IEEE 802.17 Subclause 15.2.2, adminPircReq."
+    DEFVAL { idle }
+    ::= { rprPircConfEntry 11 }
+
+
+-- 
+-- PIRC status summary table
+-- 
+
+rprPircSummaryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RprPircSummaryEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table that reports information about PIRC status and variables  
+        for each RPR interface running PIRC."
+    ::= { rprPircObjects 2 }
+
+rprPircSummaryEntry OBJECT-TYPE
+    SYNTAX      RprPircSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "PIRC functionality information about a specific PIRC station."
+    INDEX   { rprPircSummaryIfIndex }
+    ::= { rprPircSummaryTable 1 }
+
+RprPircSummaryEntry ::= SEQUENCE {
+        rprPircSummaryIfIndex                      InterfaceIndex,
+        rprPircSummaryProtState                    RprPircProtectionStatus,
+        rprPircSummaryMateLastMsgTime              TimeStamp,
+        rprPircSummaryMateMacAddress               MacAddress,
+        rprPircSummaryMatePrimary                  TruthValue,
+        rprPircSummaryMateLoadbalancing            TruthValue,
+        rprPircSummaryMateOK                       TruthValue,
+        rprPircSummaryMateManualSwitch             TruthValue       
+    }
+
+rprPircSummaryIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndex
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+        "The ifIndex of the RPR interface running PIRC."
+    ::= { rprPircSummaryEntry 1 }
+
+rprPircSummaryProtState OBJECT-TYPE
+    SYNTAX       RprPircProtectionStatus
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The current PIRC protection status of the station."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.2 pircInfo.ProtState."
+    ::= { rprPircSummaryEntry 2 }
+
+rprPircSummaryMateLastMsgTime OBJECT-TYPE
+    SYNTAX       TimeStamp
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The value of sysUpTime at the time when the last valid
+         PIRC mate message was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.2 pircMateMsg.lastTimeStamp."
+    ::= { rprPircSummaryEntry 3 }
+
+rprPircSummaryMateMacAddress OBJECT-TYPE
+    SYNTAX       MacAddress
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The source MAC Address of last valid PIRC mate message
+         that was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.2 pircMateMsg.macAddress."
+    ::= { rprPircSummaryEntry 4 }
+
+rprPircSummaryMatePrimary OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The pircPrimary of last valid PIRC mate message
+         that was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.3 pircMateMsg.pr."
+    ::= { rprPircSummaryEntry 5 }
+
+rprPircSummaryMateLoadbalancing OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The pircLoadBalancing of last valid PIRC mate message
+         that was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.3 pircMateMsg.lb."
+    ::= { rprPircSummaryEntry 6 }
+
+rprPircSummaryMateOK OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The OK indication of last valid PIRC mate message
+         that was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.3 pircMateMsg.ok."
+    ::= { rprPircSummaryEntry 7 }
+
+rprPircSummaryMateManualSwitch OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The manual-switch indication of last valid PIRC
+         mate message that was received."
+    REFERENCE
+        "IEEE 802.17c clause 15.3.3 pircMateMsg.ms."
+    ::= { rprPircSummaryEntry 8 }
+
+
 --
 -- conformance information 
 --   
@@ -6045,12 +7317,13 @@ rprSpanErrorStatsScffErrors OBJECT-TYPE
 rprGroups      OBJECT IDENTIFIER ::= { rprConformance 1 } 
 rprCompliances OBJECT IDENTIFIER ::= { rprConformance 2 } 
 
+
 rprModuleTotalStatsCompliance MODULE-COMPLIANCE 
     STATUS  current 
     DESCRIPTION 
       "The compliance statement for agent that support RPR operation
        with total statistics collections." 
-
+   
     MODULE  -- this module 
         MANDATORY-GROUPS { rprIfGroup,
                            rprSpanGroup,
@@ -6147,8 +7420,137 @@ rprModuleTotalStatsCompliance MODULE-COMPLIANCE
 
            This group is optional, the error Day statistics can be
            calculated from the 96 15min Intervals table."
+
+        OBJECT rprIfMacOperModes
+        SYNTAX      BITS { strictOrder(0), dropBadFcs(1) }
+        DESCRIPTION 
+            "Only support for the original bit values is required."
+
+        OBJECT rprTopoImageStatus
+        SYNTAX      BITS { 
+                        reachableRinglet0(0),
+                        reachableRinglet1(1),
+                        wrapActiveWest(2),
+                        wrapActiveEast(3),
+                        receivedBadFcs(4),
+                        receivedMultichokeFairness(5) }
+        DESCRIPTION 
+            "Only support for the original bit values is required."
+
      ::= { rprCompliances 1 }
 
+rprModuleSasCompliance MODULE-COMPLIANCE 
+    STATUS  current 
+    DESCRIPTION 
+      "The compliance statement for agents that support RPR
+       with the optional Spatially Aware Sublayer as well as the
+       requirements from rprModuleTotalStatsCompliance." 
+   
+    MODULE  -- this module 
+        MANDATORY-GROUPS { 
+                rprIfGroup,        -- From rprModuleTotalStatsCompliance
+                rprSpanGroup,
+                rprSpanProtectionGroup,
+                rprTopoGroup,
+                rprFairnessGroup,
+                rprSpanStatsGroup,
+                rprClientStatsGroup,
+                rprErrorStatsGroup,
+                rprSasSummaryGroup, -- New groups
+                rprSasGroup, 
+                rprSasStatsGroup, 
+                rprSasSpanStatsGroup 
+                } 
+                           
+        GROUP rprSasSummaryPurgeGroup
+        DESCRIPTION
+           "Attributes for SAS database purge control.
+            This group is optional."
+
+        GROUP rprSasStaticUcastGroup
+        DESCRIPTION
+          "Attributes for SAS Unicast Static Entries.
+           This group is optional."
+
+        GROUP rprSasStaticMcastGroup
+        DESCRIPTION
+          "Attributes for SAS Multicast Static Entries.
+           This group is optional."
+           
+        OBJECT rprSasStaticUcastRowStatus
+        SYNTAX RowStatus { active(1), notInService(2) }
+        WRITE-SYNTAX RowStatus { notInService(2), createAndGo(4), destroy(6) }
+        DESCRIPTION
+            "Support for createAndWait and notReady values are
+            not required."
+
+        OBJECT rprSasStaticMcastRowStatus 
+        SYNTAX RowStatus { active(1), notInService(2) }
+        WRITE-SYNTAX RowStatus { notInService(2), createAndGo(4), destroy(6) }
+        DESCRIPTION
+            "Support for createAndWait and notReady values are
+            not required."
+
+        OBJECT rprSasSummarySdbPurgeCmd
+        SYNTAX INTEGER { idle(1), purgeAll(2) }
+        WRITE-SYNTAX INTEGER { idle(1), purgeAll(2) }
+        DESCRIPTION
+            "Support for purgeVid, purgeMsti, purgeVidMap and 
+            purgeMstiMap values are not required."
+           
+     ::= { rprCompliances 2 }
+
+rprModulePircSasCompliance MODULE-COMPLIANCE 
+    STATUS  current 
+    DESCRIPTION 
+      "The compliance statement for agents that support RPR
+       with the optional Protected Ring Interconnect Sublayer
+       as well as the requirements from rprModuleSasCompliance." 
+   
+    MODULE  -- this module 
+        MANDATORY-GROUPS { 
+                rprIfGroup,        -- From rprModuleTotalStatsCompliance
+                rprSpanGroup,
+                rprSpanProtectionGroup,
+                rprTopoGroup,
+                rprFairnessGroup,
+                rprSpanStatsGroup,
+                rprClientStatsGroup,
+                rprErrorStatsGroup,
+                rprSasSummaryGroup, -- From rprModuleSasCompliance
+                rprSasGroup, 
+                rprSasStatsGroup, 
+                rprSasSpanStatsGroup,
+                rprPircConfGroup, -- new groups
+                rprPircSummaryGroup,
+                rprPircSpanStatsGroup
+                } 
+     ::= { rprCompliances 3 }
+     
+rprModulePircCompliance MODULE-COMPLIANCE 
+    STATUS  current 
+    DESCRIPTION 
+      "The compliance statement for agents that support RPR
+       with the optional Protected Ring Interconnect Sublayer
+       as well as the requirements from rprModuleTotalStatsCompliance." 
+   
+    MODULE  -- this module 
+        MANDATORY-GROUPS { 
+                rprIfGroup,        -- From rprModuleTotalStatsCompliance
+                rprSpanGroup,
+                rprSpanProtectionGroup,
+                rprTopoGroup,
+                rprFairnessGroup,
+                rprSpanStatsGroup,
+                rprClientStatsGroup,
+                rprErrorStatsGroup,
+                rprPircConfGroup, -- new groups
+                rprPircSummaryGroup,
+                rprPircSpanStatsGroup
+                } 
+     ::= { rprCompliances 4 }
+
+     
 --   
 -- Units of conformance.
 --
@@ -6774,11 +8176,156 @@ rprErrorStatsGroup   OBJECT-GROUP
               rprSpanErrorStatsBadParityFrames,
               rprSpanErrorStatsContainedFrames,
               rprSpanErrorStatsScffErrors
-            }
+            } 
      STATUS  current 
      DESCRIPTION 
             "Collection of objects counting MAC span error
              total statistics." 
      ::= { rprGroups 23 } 
 
+-- 
+-- 802.17b SAS Units of conformance
+-- 
+
+rprSasSummaryGroup OBJECT-GROUP
+    OBJECTS {
+        rprSasSummaryDynamicCount,
+        rprSasSummaryStaticUcastCount,
+        rprSasSummaryStaticMcastCount,
+        rprSasSummaryAgingTime,
+        rprSasSummaryStdCleave
+        }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing summary information about
+        the SAS database and SAS global settings."
+    ::= { rprGroups 24 }
+
+
+rprSasSummaryPurgeGroup OBJECT-GROUP
+     OBJECTS {
+        rprSasSummarySdbPurgeCmd,
+        rprSasSummarySdbPurgeScopeSingle,
+        rprSasSummarySdbPurgeScopeMap
+        }
+    STATUS      current
+    DESCRIPTION
+         "A collection of objects providing access to SAS database 
+         purge functions."
+   ::= { rprGroups 25 }
+
+rprSasGroup OBJECT-GROUP
+    OBJECTS {
+        rprSasDbTargetAddr,
+        rprSasDbEntryStatus
+    }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing information about dynamic
+        entries within a given SDB."
+    ::= { rprGroups 26 }
+
+rprSasStaticUcastGroup OBJECT-GROUP
+    OBJECTS {
+        rprSasStaticUcastVidOnly,
+        rprSasStaticUcastTargetAddr,
+        rprSasStaticUcastRowStatus
+    }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing information about
+        unicast addresses statically configured by
+        management."
+    ::= { rprGroups 27 }
+
+rprSasStaticMcastGroup OBJECT-GROUP
+    OBJECTS {
+        rprSasStaticMcastHopsRinglet0,
+        rprSasStaticMcastHopsRinglet1,
+        rprSasStaticMcastExtend,
+        rprSasStaticMcastRowStatus
+    }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing information about
+        multicast addresses statically configured by
+        management."
+    ::= { rprGroups 28 }
+
+rprSasStatsGroup OBJECT-GROUP
+    OBJECTS {
+        rprSasCountersStatsLocalPurges,
+        rprSasCountersStatsTopologyPurges,
+        rprSasCountersStatsNotifyPurges,
+        rprSasCountersStatsLearnFulls,
+        rprSasCountersStatsTxDirectedFrames,
+        rprSasCountersStatsTxUndirectedFrames,
+        rprSasCountersStatsTxMcastScopedFrames
+    }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing statistics about 
+        SAS operation."
+    ::= { rprGroups 29 }
+
+rprSasSpanStatsGroup   OBJECT-GROUP  
+     OBJECTS {
+              rprSpanStatsInOamSasNotifyFrames,
+              rprSpanStatsOutOamSasNotifyFrames
+            } 
+     STATUS  current 
+     DESCRIPTION 
+            "Collection of objects counting SAS span total
+             statistics." 
+     ::= { rprGroups 30 } 
+
+
+-- 
+-- 802.17C PIRC Units of conformance
+-- 
+
+rprPircConfGroup OBJECT-GROUP
+    OBJECTS {
+        rprPircConfPrimary,                 
+        rprPircConfRevertive, 
+        rprPircConfLoadBalancing,
+        rprPircConfFastMateMsgRpt,          
+        rprPircConfFastMateMsgInterval,
+        rprPircConfSlowMateMsgInterval,    
+        rprPircConfWtrTimeout,    
+        rprPircConfPcTimeout,             
+        rprPircConfMateKeepAliveInterval,
+        rprPircConfProtectionCommand}
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing configuration of
+        PIRC related attributes"
+    ::= { rprGroups 31 }
+
+rprPircSummaryGroup OBJECT-GROUP
+    OBJECTS {
+        rprPircSummaryProtState,
+        rprPircSummaryMateLastMsgTime,
+        rprPircSummaryMateMacAddress, 
+        rprPircSummaryMatePrimary,  
+        rprPircSummaryMateLoadbalancing,
+        rprPircSummaryMateOK,
+        rprPircSummaryMateManualSwitch}
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing information about
+        PIRC status and variables"
+    ::= { rprGroups 32 }
+
+rprPircSpanStatsGroup   OBJECT-GROUP  
+     OBJECTS {
+              rprSpanStatsInOamPircStatusFrames,
+              rprSpanStatsOutOamPircStatusFrames
+            } 
+     STATUS  current 
+     DESCRIPTION 
+            "Collection of objects counting PIRC span total
+             statistics." 
+     ::= { rprGroups 33 } 
+     
 END
