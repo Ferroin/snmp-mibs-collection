@@ -40,7 +40,8 @@ The following vendors are represented here:
   from the Gentoo distribution of libSMI.
 * Jacobs University Brenen: Mostly of interest for monitoring sensor
   networks.  Obtained from the Gentoo distribution of libSMI.
-* Juniper: JunoS and ScreenOS related MIB's.
+* Juniper: JunoS and ScreenOS related MIB's.  Obtained directly from
+  Juniper using snmp-mibs-downloader from Debian.
 * Microsoft: A handful of Windows MIB's.  The only ones likely to be of
   significant interest are MSFT, WINS, and WINDOWS-NT-PERFORMANCE.
   Obtained from various sources online, then curated to fix encoding
